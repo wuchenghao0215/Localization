@@ -12,8 +12,10 @@ KERNEL_HAT_R = 3
 TOP_HAT_ITERATION = 10
 # open close args
 ITERATION_MIN_MIN = 5
-ITERATION_MIN = 5
-ITERATION_MAX = 10
+# ITERATION_MIN = 5
+ITERATION_MIN = 10
+# ITERATION_MAX = 10
+ITERATION_MAX = 15
 KERNEL_MIN_MIN = [3, 1]
 KERNEL_MIN = [1, 1]
 KERNEL_MAX = [2, 2]
@@ -26,7 +28,7 @@ SOBEL_DY = 0
 BINARY_THRESH = 120
 BINARY_MAX = 255
 # contour conditions
-AREA_MIN = 500
+AREA_MIN = 200
 RATIO_MIN = 1.2
 RATIO_MAX = 4
 
@@ -68,7 +70,13 @@ def color_binary(img_bgr):
             - img_binary    : numpy.array (size_x, size_y)
                               分辨率为 size_x * size_y 的二值图像(0/255)
     """
+
     img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    # 适当放宽颜色范围
+    """
+    lower_blue = np.array([0.5 * 205, 0.35 * 255, 0.25 * 255])
+    upper_blue = np.array([0.5 * 230, 0.9 * 255, 255])
+    """
     lower_blue = np.array([100, 80, 80])
     upper_blue = np.array([124, 255, 255])
     img_binary = cv2.inRange(img_hsv, lower_blue, upper_blue)
@@ -148,7 +156,9 @@ def search_contour_box(img_binary):
     """
     target_boxes = []
     # 查找轮廓
-    contours, hierarchy = cv2.findContours(img_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(img_binary,
+                                           cv2.RETR_TREE,
+                                           cv2.CHAIN_APPROX_SIMPLE)
 
     # 过滤选择
     for contour in contours:
@@ -161,17 +171,10 @@ def search_contour_box(img_binary):
         # 顶点坐标
         box = cv2.boxPoints(rect)
         box = np.int0(box)
-        # 计算矩形长宽
+        # 计算矩形长宽比
         height = np.sqrt((box[0][1] - box[1][1]) ** 2 + (box[0][0] - box[1][0]) ** 2)
         width = np.sqrt((box[1][1] - box[2][1]) ** 2 + (box[1][0] - box[2][0]) ** 2)
-
-        # 如果矩形面积和轮廓面积相差太大，说明轮廓不是矩形，可以排除
-        if area < 0.7 * height * width:
-            continue
-
-        # 计算矩形长宽比
         ratio = np.max([height, width]) / np.min([height, width])
-
         # 根据长宽比筛选
         if RATIO_MIN < ratio < RATIO_MAX:
             target_boxes.append(box)
@@ -224,18 +227,20 @@ def plate_locate(img_bgr):
     """
 
     """ TODO starts """
+    # 使用蓝色识别 + 边缘检测方法
+    # 1. 蓝色二值化
     img_binary = color_binary(img_bgr)
     plt.subplot(221), plt.imshow(img_binary, "gray"), plt.title("binary"), plt.xticks([]), plt.yticks([])
 
-    img_binary = cv2.GaussianBlur(img_binary, (GAUSS_FILTER_SIZE, GAUSS_FILTER_SIZE), 0)
-    img_binary = cv2.medianBlur(img_binary, MEDIAN_FILTER_SIZE)
-    _, img_binary = cv2.threshold(img_binary, BINARY_THRESH, BINARY_MAX, cv2.THRESH_BINARY)
-    plt.subplot(222), plt.imshow(img_binary, "gray"), plt.title("blur"), plt.xticks([]), plt.yticks([])
+    # 2. 边缘检测
+    img_canny = cv2.Canny(img_binary, 200, 500)
+    plt.subplot(222), plt.imshow(img_canny, "gray"), plt.title("canny"), plt.xticks([]), plt.yticks([])
 
-    img_binary = close_open(img_binary)
-    plt.subplot(223), plt.imshow(img_binary, "gray"), plt.title("close open"), plt.xticks([]), plt.yticks([])
+    # 3. 开闭运算
+    img_close_open = close_open(img_canny)
+    plt.subplot(223), plt.imshow(img_close_open, "gray"), plt.title("close_open"), plt.xticks([]), plt.yticks([])
 
-    img4contour = img_binary.copy()
+    img4contour = img_close_open.copy()
 
     # please prepare a numpy.array (size_x, size_y) img4contour for search_contour_box() func next
     """ TODO ends """
@@ -243,11 +248,9 @@ def plate_locate(img_bgr):
     """ draw the boxes[0] by default """
     boxes = search_contour_box(img4contour)
     if len(boxes) > 0:
-        print(len(boxes))
-        for box in boxes:
-            cv2.polylines(img, [box.ravel().reshape(4, 2)], True, (0, 255, 255), 2)
+        cv2.polylines(img, [boxes[0].ravel().reshape(4, 2)], True, (0, 255, 255), 2)
     else:
-        print("No box found!")
+        print("no plate found")
 
     return img
 
@@ -255,7 +258,7 @@ def plate_locate(img_bgr):
 if __name__ == '__main__':
     plt.figure("license plate localization")
     # 可以更换其他测试图片 
-    img = cv2.imread("./5.jpeg")
+    img = cv2.imread("images/4.jpeg")
     plt.subplot(224), plt.imshow(img[:, :, ::-1]), plt.title("img"), plt.xticks([]), plt.yticks([])
     img = plate_locate(img)
     plt.subplot(224), plt.imshow(img[:, :, ::-1]), plt.title("img"), plt.xticks([]), plt.yticks([])
